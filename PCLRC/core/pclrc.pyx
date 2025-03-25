@@ -16,8 +16,37 @@ DTYPE_F = np.float32
 @cython.wraparound(False)
 @cython.boundscheck(False)
 @cython.cdivision(True)
+cdef void normalize(float[:, ::1] x, float[:, ::1] xt):
+    """
+    Normalizes x for Pearson correlation coefficients and transposes
+    to the matrix with columns as rows of original matrix.
+    
+    """
+    cdef:
+        Py_ssize_t i, j
+        Py_ssize_t n = x.shape[0]
+        Py_ssize_t p = x.shape[1]
+        float fn = <float> n
+        float s, s2, b
+
+    for i in range(p):
+        s = 0.
+        s2 = 0.
+        for j in range(n):
+            s += x[j, i]
+            s2 += x[j, i] * x[j, i]
+        s /= fn
+        b = sqrtf(s2 - fn * s * s)
+        # save to a transposed data matrix
+        for j in range(n):
+            xt[i, j] = (x[j, i] - s) / b
+
+
+@cython.wraparound(False)
+@cython.boundscheck(False)
+@cython.cdivision(True)
 cdef void clr(float[:, ::1] x, float q, float[:, ::1] corr_x,
-              float[:, ::1] b_adjx, float[::1] corr_xvals):
+              float[:, ::1] b_adjx, float[::1] corr_counts, float[:, ::1] xt):
     """
     Generates an association matrix.
     
@@ -27,72 +56,74 @@ cdef void clr(float[:, ::1] x, float q, float[:, ::1] corr_x,
     q: Threshold % for defining association.
     corr_x: Correlation matrix.
     b_adjx: Binary adjacent matrix.
-    corr_xvals: 1-D correlation array for sorting.
+    corr_counts: 1-D array to count the number of correlation
+        coefficients in each of total 1000 bins.
 
     Returns
     -------
 
     """
     cdef:
-        Py_ssize_t i, j, k, t
+        Py_ssize_t i, j, t
         Py_ssize_t n = x.shape[0]
         Py_ssize_t p = x.shape[1]
-        Py_ssize_t m = 0
-        int[::1] ix
-        float * norm_x = <float *> malloc(p * sizeof(float))
-        float * mx = <float *> malloc(p * sizeof(float))
         float fn = <float> n
-        float s, s2, thr
+        float pp = <float> (p * p)
+        float s, s2, thr, b
 
-    for i in range(p):
-        s = 0.
-        s2 = 0.
-        for j in range(n):
-            s += x[j, i]
-            s2 += x[j, i] * x[j, i]
-        mx[i] = s / fn
-        norm_x[i] = sqrtf(s2 - s * s / fn)
+    normalize(x, xt)
 
     # Pearson correlation
     for i in range(p):
         for j in range(p):
             s = 0.
             for k in range(n):
-                s += x[k, i] * x[k, j]
-            corr_x[i, j] = (s - fn * mx[i] * mx[j]) / (norm_x[i] * norm_x[j])
-            corr_xvals[m] = fabs(corr_x[i, j])
-            m += 1
+                s += xt[i, k] * xt[j, k]
+            corr_x[i, j] = s
+            t = <ssize_t> (fabs(s) * 1000.)
+            corr_counts[t] += 1.
 
     # CLR
     if q != 0.:
-        ix = np.ascontiguousarray(np.argsort(corr_xvals), dtype=DTYPE_I)
-        t = <ssize_t> ix[<ssize_t> ((1. - q) * <float> (p * p))]
-
         # threshold
-        thr = corr_xvals[t]
+        b = 0.
+        thr = 1.
+        for i in range(999, -1, -1):
+            b += corr_counts[i]
+            if b / pp > q:
+                break
+            thr = <float> (i + 1) / 1000.
+
         for i in range(p):
             for j in range(p):
                 if fabs(corr_x[i, j]) >= thr:
                     b_adjx[i, j] = 1.
 
-    else:
-        # hard threshold
-        for i in range(p):
-            s = 0.
-            s2 = 0.
-            for j in range(p):
-                s2 += corr_x[i, j] * corr_x[i, j]
-                s += corr_x[i, j]
-            mx[i] = s / <float> p
-            norm_x[i] = sqrtf(s2 / <float> p - mx[i] * mx[i])
+        return
 
-        for i in range(p):
-            for j in range(p):
-                # z score
-                s = max((corr_x[i, j] - mx[i]) / norm_x[i], 0.)
-                s2 = max((corr_x[i, j] - mx[j]) / norm_x[j], 0.)
-                if s * s + s2 * s2 > 0.:
-                    b_adjx[i, j] = 1.
+
+    cdef:
+        float * norm_x = <float *> malloc(p * sizeof(float))
+        float * mx = <float *> malloc(p * sizeof(float))
+
+    pp = <float> p
+    # hard threshold
+    for i in range(p):
+        s = 0.
+        s2 = 0.
+        for j in range(p):
+            s2 += corr_x[i, j] * corr_x[i, j]
+            s += corr_x[i, j]
+        mx[i] = s / pp
+        norm_x[i] = sqrtf(s2 / pp - mx[i] * mx[i])
+
+    for i in range(p):
+        for j in range(p):
+            # z score
+            s = max((corr_x[i, j] - mx[i]) / norm_x[i], 0.)
+            s2 = max((corr_x[i, j] - mx[j]) / norm_x[j], 0.)
+            if s * s + s2 * s2 > 0.:
+                b_adjx[i, j] = 1.
 
     free(mx)
     free(norm_x)
@@ -128,7 +159,8 @@ def pclrc_single(float[:, ::1] x, float f, float q, int bootstrap,
         int[::1] rnd_ix = np.ascontiguousarray(
             np.random.choice(n, size=s, replace=bool(bootstrap)),
             dtype=DTYPE_I)
-        float[::1] corr_vals = np.zeros(p * p, dtype=DTYPE_F)
+        float[::1] corr_counts = np.zeros(1000, dtype=DTYPE_F)
+        float[:, ::1] xt = np.zeros((p, s), dtype=DTYPE_F)
         float[:, ::1] corr_x = np.zeros((p, p), dtype=DTYPE_F)
         float[:, ::1] sub_x = np.zeros((s, p), dtype=DTYPE_F)
         float[:, ::1] b_adjx = np.zeros((p, p), dtype=DTYPE_F)
@@ -138,7 +170,7 @@ def pclrc_single(float[:, ::1] x, float f, float q, int bootstrap,
         sub_x[i, :] = x[rnd_ix[i]]
 
     # CLR
-    clr(sub_x, q, corr_x, b_adjx, corr_vals)
+    clr(sub_x, q, corr_x, b_adjx, corr_counts, xt)
 
     # get probabilities
     for i in range(p):
@@ -173,7 +205,8 @@ def pclrc(float[:, ::1] x, int r, float f, float q, int bootstrap):
         Py_ssize_t s = <ssize_t> (f * <float> n)
         Py_ssize_t p = x.shape[1]
         int[::1] rnd_ix = np.zeros(s, dtype=DTYPE_I)
-        float[::1] corr_vals = np.zeros(p * p, dtype=DTYPE_F)
+        float[::1] corr_counts = np.zeros(1000, dtype=DTYPE_F)
+        float[:, ::1] xt = np.zeros((p, s), dtype=DTYPE_F)
         float[:, ::1] corr_x = np.zeros((p, p), dtype=DTYPE_F)
         float[:, ::1] sub_x = np.zeros((s, p), dtype=DTYPE_F)
         float[:, ::1] b_adjx = np.zeros((p, p), dtype=DTYPE_F)
@@ -196,7 +229,7 @@ def pclrc(float[:, ::1] x, int r, float f, float q, int bootstrap):
             sub_x[j, :] = x[rnd_ix[j]]
 
         # CLR
-        clr(sub_x, q, corr_x, b_adjx, corr_vals)
+        clr(sub_x, q, corr_x, b_adjx, corr_counts, xt)
 
         # get probabilities
         for j in range(p):
@@ -204,7 +237,7 @@ def pclrc(float[:, ::1] x, int r, float f, float q, int bootstrap):
                 prob_adjs[j, k] += b_adjx[j, k]
 
         b_adjx[:, :] = 0.
-        corr_vals[:] = 0.
+        corr_counts[:] = 0.
 
     # get the probability
     for i in range(p):

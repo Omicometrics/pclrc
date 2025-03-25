@@ -24,6 +24,7 @@ class PCLRC(object):
         q: A number between 0 and 1 to justify the threshold in Pearson
             correlation coefficients to define the associations.
         bootstrap: Whether to use bootstrap for sampling.
+        prob: Probability threshold to define the associations.
 
     """
     def __init__(self, num_sampling: int = int(1e5),
@@ -36,7 +37,7 @@ class PCLRC(object):
 
         self._check_params()
 
-    def corr_probs(self, x: np.ndarray) -> np.ndarray:
+    def corr_probs(self, x: np.ndarray, prog_bar: bool = True) -> np.ndarray:
         """
         Computes a probabilistic correlation matrix.
 
@@ -48,8 +49,8 @@ class PCLRC(object):
         -------
 
         """
-        r, c = x.shape
-        if r >= 50. or c >= 60.:
+        if prog_bar:
+            r, c = x.shape
             probs = np.zeros((c, c), dtype=np.float32)
             for _ in tqdm.tqdm(range(self.num_sampling),
                                desc='Calculating probs'):
