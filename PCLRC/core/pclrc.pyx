@@ -16,35 +16,6 @@ DTYPE_F = np.float32
 @cython.wraparound(False)
 @cython.boundscheck(False)
 @cython.cdivision(True)
-cdef void normalize(float[:, ::1] x, float[:, ::1] xt):
-    """
-    Normalizes x for Pearson correlation coefficients and transposes
-    to the matrix with columns as rows of original matrix.
-    
-    """
-    cdef:
-        Py_ssize_t i, j
-        Py_ssize_t n = x.shape[0]
-        Py_ssize_t p = x.shape[1]
-        float fn = <float> n
-        float s, s2, b
-
-    for i in range(p):
-        s = 0.
-        s2 = 0.
-        for j in range(n):
-            s += x[j, i]
-            s2 += x[j, i] * x[j, i]
-        s /= fn
-        b = sqrtf(s2 - fn * s * s)
-        # save to a transposed data matrix
-        for j in range(n):
-            xt[i, j] = (x[j, i] - s) / b
-
-
-@cython.wraparound(False)
-@cython.boundscheck(False)
-@cython.cdivision(True)
 cdef void clr(float[:, ::1] x, float q, float[:, ::1] corr_x,
               float[:, ::1] b_adjx, float[::1] corr_counts, float[:, ::1] xt):
     """
@@ -64,43 +35,59 @@ cdef void clr(float[:, ::1] x, float q, float[:, ::1] corr_x,
 
     """
     cdef:
-        Py_ssize_t i, j, t
+        Py_ssize_t i, j, t, g
         Py_ssize_t n = x.shape[0]
         Py_ssize_t p = x.shape[1]
         float fn = <float> n
         float pp = <float> (p * p)
-        float s, s2, thr, b
+        float s, s2, thr, b, a
 
-    normalize(x, xt)
+    # one-pass online algorithm to calculate mean and variances
+    for i in range(p):
+        s = x[0, i]
+        s2 = 0.
+        b = 1.
+        for j in range(1, n):
+            b += 1.
+            # difference to previous mean
+            a = x[j, i] - s
+            # update mean and variances
+            s += a / b
+            s2 += a * (x[j, i] - s)
+        s2 = sqrtf(s2)
+        # mean centering
+        for j in range(n):
+            xt[i, j] = (x[j, i] - s) / s2
 
     # Pearson correlation
     for i in range(p):
-        for j in range(p):
+        for j in range(i + 1, p):
             s = 0.
-            for k in range(n):
-                s += xt[i, k] * xt[j, k]
+            for t in range(n):
+                s += xt[i, t] * xt[j, t]
             corr_x[i, j] = s
-            t = <ssize_t> (fabs(s) * 1000.)
-            corr_counts[t] += 1.
+            corr_x[j, i] = s
+            t = <ssize_t> (min(fabs(s), 1.) * 1000.)
+            corr_counts[t] += 2.
 
     # CLR
     if q != 0.:
         # threshold
         b = 0.
         thr = 1.
-        for i in range(999, -1, -1):
+        for i in range(1000, -1, -1):
             b += corr_counts[i]
             if b / pp > q:
                 break
-            thr = <float> (i + 1) / 1000.
+            thr = <float> i / 1000.
 
         for i in range(p):
-            for j in range(p):
+            for j in range(i + 1, p):
                 if fabs(corr_x[i, j]) >= thr:
                     b_adjx[i, j] = 1.
+                    b_adjx[j, i] = 1.
 
         return
-
 
     cdef:
         float * norm_x = <float *> malloc(p * sizeof(float))
@@ -159,7 +146,7 @@ def pclrc_single(float[:, ::1] x, float f, float q, int bootstrap,
         int[::1] rnd_ix = np.ascontiguousarray(
             np.random.choice(n, size=s, replace=bool(bootstrap)),
             dtype=DTYPE_I)
-        float[::1] corr_counts = np.zeros(1000, dtype=DTYPE_F)
+        float[::1] corr_counts = np.zeros(1001, dtype=DTYPE_F)
         float[:, ::1] xt = np.zeros((p, s), dtype=DTYPE_F)
         float[:, ::1] corr_x = np.zeros((p, p), dtype=DTYPE_F)
         float[:, ::1] sub_x = np.zeros((s, p), dtype=DTYPE_F)
@@ -205,7 +192,7 @@ def pclrc(float[:, ::1] x, int r, float f, float q, int bootstrap):
         Py_ssize_t s = <ssize_t> (f * <float> n)
         Py_ssize_t p = x.shape[1]
         int[::1] rnd_ix = np.zeros(s, dtype=DTYPE_I)
-        float[::1] corr_counts = np.zeros(1000, dtype=DTYPE_F)
+        float[::1] corr_counts = np.zeros(1001, dtype=DTYPE_F)
         float[:, ::1] xt = np.zeros((p, s), dtype=DTYPE_F)
         float[:, ::1] corr_x = np.zeros((p, p), dtype=DTYPE_F)
         float[:, ::1] sub_x = np.zeros((s, p), dtype=DTYPE_F)
