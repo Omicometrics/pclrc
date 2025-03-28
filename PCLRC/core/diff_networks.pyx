@@ -187,3 +187,56 @@ def perm_diff_connect(float[:, ::1] x, int[::1] group_tags,
         diff_chis[i] = chis[0, i] - chis[1, i]
 
     return np.asarray(diff_chis)
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def perm_probs(float[::1] diff_chis, float[:, ::1] perm_diff_chis, float fdr):
+    """
+    Calculates permutation p values.
+
+    Parameters
+    ----------
+    diff_chis: Differential connectivity.
+    perm_diff_chis: Permutated differential connectivity.
+    fdr: FDR.
+
+    Returns
+    -------
+
+    """
+    cdef:
+        Py_ssize_t i, j
+        Py_ssize_t p = diff_chis.shape[0]
+        Py_ssize_t nperm = perm_diff_chis.shape[0]
+        Py_ssize_t g = 0
+        int[::1] ix
+        int[::1] sig_ix = np.zeros(p, dtype=DTYPE_I)
+        float * tmp_vx = <float *> malloc(p * sizeof(float))
+        float[::1] pvals = np.zeros(p, dtype=DTYPE_F)
+        float fp = <float> p
+        float c, d
+
+    for i in range(p):
+        d = fabs(diff_chis[i])
+        c = 0.
+        for j in range(nperm):
+            if fabs(perm_diff_chis[i, j]) >= d:
+                c += 1.
+        pvals[i] = (c + 1.) / <float> nperm
+
+    # perform FDR control
+    ix = np.ascontiguousarray(np.argsort(pvals), dtype=DTYPE_I)
+    for i in range(p):
+        j = <ssize_t> ix[i]
+        if <float> (i + 1) / fp * fdr > pvals[j]:
+            sig_ix[g] = ix[i]
+            tmp_vx[g] = pvals[j]
+            g += 1
+
+    for i in range(g):
+        pvals[i] = tmp_vx[i]
+
+    free(tmp_vx)
+
+    return np.asarray(sig_ix[:g]), np.asarray(pvals[:g])
