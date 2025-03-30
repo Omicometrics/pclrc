@@ -16,7 +16,8 @@ import numpy as np
 from typing import Optional, List, Any
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from .core import pclrc, pclrc_single, diff_connect, perm_diff_connect, perm_probs
+from .core import (pclrc, pclrc_single, diff_connect, perm_diff_connect,
+                   sig_perm_probs, perm_probs)
 
 
 def perm_tests(num_sampling: int, frac_sampling: float, q: float,
@@ -126,7 +127,7 @@ class PCLRC(object):
                           int(self.bootstrap))
         return probs
 
-    def network_diffs(self, x: np.ndarray, groups: np.ndarray) -> np.ndarray:
+    def network_diffs(self, x: np.ndarray, groups: np.ndarray) -> None:
         """
         Performs network difference analysis
 
@@ -199,7 +200,6 @@ class PCLRC(object):
 
         self._perm_diff_chis = rnd_d_chis
 
-    @property
     def pearson_corr_probs(self, label: Optional[Any] = None)\
             -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         """
@@ -221,12 +221,6 @@ class PCLRC(object):
 
         raise ValueError(f"Unknown label name input: {label}.")
 
-    @property
-    def diff_connectivity(self) -> np.ndarray:
-        """ Returns differential connectivity. """
-        return self._diff_chis
-
-    @property
     def sig_diff_connectivity(self, fdr: float = 0.05)\
             -> tuple[np.ndarray, np.ndarray]:
         """
@@ -235,7 +229,7 @@ class PCLRC(object):
 
         Parameters
         ----------
-        FDR: FDR threshold, defaults to 0.05.
+        fdr: FDR threshold, defaults to 0.05.
 
         Returns
         -------
@@ -246,8 +240,33 @@ class PCLRC(object):
         if self._perm_diff_chis is None:
             raise ValueError("No permutation tests performed.")
 
-        return perm_probs(self._diff_chis, self._perm_diff_chis,
-                          np.float32(fdr))
+        return sig_perm_probs(self._diff_chis, self._perm_diff_chis,
+                              np.float32(fdr))
+
+    def perm_chi_vals(self, k: int) -> np.ndarray:
+        """ Returns permutation chi values. """
+        if self._perm_diff_chis is None:
+            raise ValueError("No permutation tests performed.")
+
+        return self._perm_diff_chis[:, k]
+
+    @property
+    def diff_connectivity(self) -> np.ndarray:
+        """ Returns differential connectivity. """
+        return self._diff_chis
+
+    @property
+    def data_labels(self) -> np.ndarray:
+        """ Returns group names of the input data. """
+        return self._labels
+
+    @property
+    def perm_probs(self) -> np.ndarray:
+        """ Returns permutation probability. """
+        if self._perm_diff_chis is None:
+            raise ValueError("No permutation tests performed.")
+
+        return perm_probs(self._diff_chis, self._perm_diff_chis)
 
     def _get_num_perms(self) -> None:
         """

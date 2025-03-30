@@ -16,6 +16,26 @@ DTYPE_I = np.int32
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
+cdef void get_perm_probs(float[:, ::1] perm_vals, float[::1] vals,
+                         float[::1] pvals):
+    cdef:
+        Py_ssize_t i, j
+        Py_ssize_t p = pvals.shape[0]
+        Py_ssize_t nperm = perm_vals.shape[0]
+        float c, d
+
+    for i in range(p):
+        d = fabs(vals[i])
+        c = 0.
+        for j in range(nperm):
+            if fabs(perm_vals[i, j]) >= d:
+                c += 1.
+        pvals[i] = (c + 1.) / <float> nperm
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
 cdef void chi_conn(float[:, ::1] x,  float[:, ::1] probs, float prob_thr,
                    float[::1] chi_vals):
     """
@@ -191,9 +211,24 @@ def perm_diff_connect(float[:, ::1] x, int[::1] group_tags,
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def perm_probs(float[::1] diff_chis, float[:, ::1] perm_diff_chis, float fdr):
+def perm_probs(float[::1] diff_chis, float[:, ::1] perm_diff_chis):
+    """ Calculates permuted probabilties. """
+    cdef:
+        Py_ssize_t p = diff_chis.shape[0]
+        float[::1] pvals = np.zeros(p, dtype=DTYPE_F)
+
+    get_perm_probs(perm_diff_chis, diff_chis, pvals)
+
+    return np.asarray(pvals)
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
+def sig_perm_probs(float[::1] diff_chis, float[:, ::1] perm_diff_chis, float fdr):
     """
-    Calculates permutation p values.
+    Calculates permutation p values and controlled using BH procedure to
+    select important p values.
 
     Parameters
     ----------
@@ -208,22 +243,14 @@ def perm_probs(float[::1] diff_chis, float[:, ::1] perm_diff_chis, float fdr):
     cdef:
         Py_ssize_t i, j
         Py_ssize_t p = diff_chis.shape[0]
-        Py_ssize_t nperm = perm_diff_chis.shape[0]
         Py_ssize_t g = 0
         int[::1] ix
         int[::1] sig_ix = np.zeros(p, dtype=DTYPE_I)
         float * tmp_vx = <float *> malloc(p * sizeof(float))
         float[::1] pvals = np.zeros(p, dtype=DTYPE_F)
         float fp = <float> p
-        float c, d
 
-    for i in range(p):
-        d = fabs(diff_chis[i])
-        c = 0.
-        for j in range(nperm):
-            if fabs(perm_diff_chis[i, j]) >= d:
-                c += 1.
-        pvals[i] = (c + 1.) / <float> nperm
+    get_perm_probs(perm_diff_chis, diff_chis, pvals)
 
     # perform FDR control
     ix = np.ascontiguousarray(np.argsort(pvals), dtype=DTYPE_I)

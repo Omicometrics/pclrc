@@ -29,6 +29,7 @@ cdef void clr(float[:, ::1] x, float q, float[:, ::1] corr_x,
     b_adjx: Binary adjacent matrix.
     corr_counts: 1-D array to count the number of correlation
         coefficients in each of total 1000 bins.
+    xt: transformed centered x.
 
     Returns
     -------

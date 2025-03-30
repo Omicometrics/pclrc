@@ -1,5 +1,6 @@
 from .pclrc import pclrc, pclrc_single
-from .diff_networks import diff_connect, perm_diff_connect, perm_probs
+from .diff_networks import (diff_connect, perm_diff_connect,
+                            perm_probs, sig_perm_probs)
 
 
 ALL = [
@@ -7,5 +8,6 @@ ALL = [
     "pclrc",
     "pclrc_single",
     "perm_diff_connect",
-    "perm_probs"
+    "perm_probs",
+    "sig_perm_probs"
 ]
