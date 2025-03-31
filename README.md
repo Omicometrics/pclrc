@@ -116,6 +116,6 @@ demonstration.
 
 
 # References
-[1] Saccenti E, et al. J. Proteome Res. 2015, 14, 2, 1101–1111.
-[2] Vignoli A, et al. J. Proteome Res. 2020, 19, 949−961 
-[3] Suarez-Diez M, et al. J. Proteome Res. 2015, 14, 12, 5119–5130
+[1] Saccenti E, et al. J. Proteome Res. 2015, 14, 2, 1101–1111.<br>
+[2] Vignoli A, et al. J. Proteome Res. 2020, 19, 949−961.<br>
+[3] Suarez-Diez M, et al. J. Proteome Res. 2015, 14, 12, 5119–5130.
