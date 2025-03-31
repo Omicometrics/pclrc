@@ -78,7 +78,6 @@ class PCLRC(object):
     def __init__(self, num_sampling: int = int(1e5),
                  frac_sampling: float = 0.75,
                  q: float = 0.3, corr_prob: float = 0.9,
-                 alpha: float = 0.05,
                  bootstrap: bool = False, num_perms: int = int(1e4),
                  num_cores: Optional[int] = None):
 
