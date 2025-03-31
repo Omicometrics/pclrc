@@ -18,7 +18,7 @@ All can be easily installed using `pip` or `conda`.
 
 # Installation
 To install, download the package from the
-**[Releases](https://github.com/Omicometrics/pclrc/releases/latest/download/package.zip)**.
+**[Releases](https://github.com/Omicometrics/pclrc/releases/tag/v0.1.0)**.
 Uncompress the file and move them to the working directory. Open command line
 tool like `Command Prompt` (in Windows) or `Terminal` (in macOS) and set
 current directory to the working directory using `cd` command. In Windows, run
